@@ -2,7 +2,14 @@
 
 The home page and, at `/docs`, the guides of [`../docs`](../docs), built with
 TanStack Start and shadcn/ui. Every page is prerendered at build time, and
-Cloudflare Workers serves the result as static assets, with no Worker code.
+Cloudflare Workers serves the result as static assets, with a small Worker
+that redirects requests from the old domain before serving assets.
+
+Production deploys attach the Worker to `mygo.run` and `mygo.egoist.dev`
+through the custom domains in `wrangler.jsonc`. `worker.js` permanently
+redirects `mygo.egoist.dev` to `https://mygo.run`, preserving the path and
+query string. Requests to `mygo.run`, preview URLs and localhost serve assets
+normally. Preview deployments do not change the production domains.
 
 ```sh
 bun install                    # at the root of the repository

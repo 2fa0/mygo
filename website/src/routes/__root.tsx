@@ -38,7 +38,7 @@ export const Route = createRootRoute({
               {
                 src: "https://tt.egoist.dev/js/script.js",
                 defer: true,
-                "data-domain": "mygo.egoist.dev",
+                "data-domain": "mygo.run",
               },
             ]
           : []),
