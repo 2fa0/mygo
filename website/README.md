@@ -37,6 +37,30 @@ app of native UI compiled to WebAssembly), and `<!-- app mayoi 480 -->`
 runs an example app, one of `apps` in `docs-demo.ts`; a button of its title
 bar opens it in a tab of its own.
 
+The site is in English at its paths, and in Chinese under `/zh`: every page
+is prerendered in both, `/docs/plugins/fetch` and `/zh/docs/plugins/fetch`.
+A browser whose languages ask for Chinese first, and no choice of English in
+the header, is sent from an English page to its page under `/zh` before it
+paints (`localeScript`); the header's picker keeps the choice. The site's
+text is written in English, and `src/lib/zh.ts` holds the Chinese of each
+English text, which `useT()` looks up: a text without one stays in English.
+The routes live in `src/routes/{-$lang}`, a path segment that is `zh` under
+`/zh` and absent at the English paths, and `vite.config.ts` lists `/zh`
+among the pages to prerender, the root of the Chinese site, which nothing
+else links to.
+
+The docs are translated too: `../docs-zh` holds the Chinese of `../docs`,
+page for page, except `architecture.md`, which is not translated, and
+`/zh/docs/...` renders from it, its sidebar and its search from
+`../docs-zh/README.md` and `/zh/docs/search.json`. A page without a
+translation falls back to the English page, with its links under `/zh`.
+`../docs-zh/TRANSLATION.txt` is the translators' guide. The Markdown
+downloads include the Chinese pages, `/zh/docs/plugins/fetch.md`.
+
+The 404 page, prerendered as `404.html`, is English at any path that has no
+page: one HTML serves both languages, and a page in Chinese would differ
+from it as it hydrates.
+
 Native UI's docs, in `docs/ui`, have a sidebar of their own, from the lists
 of `docs/ui/README.md` (the page at `/docs/ui`), and the header's UI link;
 the docs' sidebar leaves them out. A directory's `README.md` is the page of
