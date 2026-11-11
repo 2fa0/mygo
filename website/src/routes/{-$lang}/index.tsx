@@ -82,7 +82,7 @@ function Home() {
     <main>
       <section className="relative px-4 py-20 sm:px-10 md:py-28">
         <GopherRocket className="pointer-events-none absolute inset-y-0 right-0 hidden w-[40%] lg:block xl:w-[46%]" />
-        <div className="relative">
+        <div className="relative lg:w-3/5 xl:w-[54%]">
           <a href={`${site.repo}/releases/tag/v${__MYGO_VERSION__}`} className="label inline-flex items-center gap-2 hover:text-foreground">
             <span className="size-1.5 rounded-full bg-gopher" />v{__MYGO_VERSION__} · macOS, Linux, Windows
           </a>

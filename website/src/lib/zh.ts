@@ -50,7 +50,7 @@ export const zh: Record<string, string> = {
   // The home page.
   "MyGo — Desktop apps in Go, with native UI or a web frontend": "MyGo — 用 Go 构建桌面应用，支持原生 UI 或 Web 前端",
   "Desktop apps in Go.": "用 Go 构建桌面应用。",
-  "Tiny, fast, fully typed.": "体积小、速度快，类型支持一应俱全。",
+  "Tiny, fast, fully typed.": "小巧、快速、一应俱全",
   "One small binary for macOS, Windows and Linux. Native UI or a web frontend in Go, with installers and auto-updates included.":
     "用 Go 构建桌面应用，界面可选原生 UI 或 Web 前端。在 macOS、Windows 和 Linux 上都只需一个小巧的可执行文件，还支持生成安装包和自动更新。",
   "Get started": "开始使用",
