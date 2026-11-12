@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -27,7 +28,32 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, hresultError("CoInitializeEx", r))
 			os.Exit(1)
 		}
-		fmt.Println((shell{}).TrashItem(path))
+		paths := strings.Split(path, string(os.PathListSeparator))
+		resize := os.Getenv("MYGO_TEST_TRASH_RESIZE")
+		var resizeKey string
+		var resizeCapacity uint32
+		if len(paths) > 1 && resize != "" {
+			capacity, err := strconv.ParseUint(resize, 10, 32)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			key, ok := recycleBinKey(paths[0])
+			if !ok {
+				fmt.Fprintln(os.Stderr, "cannot find the recycle bin key for", paths[0])
+				os.Exit(1)
+			}
+			resizeKey, resizeCapacity = key, uint32(capacity)
+		}
+		for i, path := range paths {
+			fmt.Println((shell{}).TrashItem(path))
+			if i == 0 && resizeKey != "" {
+				if err := setRegistryDWORD(resizeKey, "MaxCapacity", resizeCapacity); err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					os.Exit(1)
+				}
+			}
+		}
 		procCoUninitialize.Call()
 		os.Exit(0)
 	}
@@ -300,6 +326,89 @@ func TestDefaultRecycleBinCapacity(t *testing.T) {
 	} {
 		if got := defaultRecycleBinCapacity(tc.total); got != tc.want {
 			t.Errorf("defaultRecycleBinCapacity(%d) = %d MiB, want %d", tc.total, got, tc.want)
+		}
+	}
+}
+
+func TestTrashItemFailsWhenWindowsDeletesAFileAllTheSame(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	if r, _, _ := procCoInitializeEx.Call(0, coinitApartmentThreaded); failed(r) {
+		t.Fatal(hresultError("CoInitializeEx", r))
+	}
+	defer procCoUninitialize.Call()
+	dir := t.TempDir()
+	setRecycleBinCapacity(t, dir, 1)
+	folder := filepath.Join(dir, "folder")
+	if err := os.Mkdir(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 2 {
+		if err := os.WriteFile(filepath.Join(folder, fmt.Sprintf("%d.bin", i)), make([]byte, 2<<20), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file := filepath.Join(dir, "file.bin")
+	if err := os.WriteFile(file, make([]byte, 4<<20), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The helper's shell reads the size of 1 MB refusing the folder, which
+	// puts nothing in the recycle bin: Windows may empty a recycle bin that
+	// holds more than its size. The size then grows behind the shell's back,
+	// so the file passes TrashItem's check and the shell deletes it.
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	cmd.Env = append(os.Environ(),
+		"MYGO_TEST_TRASH_ITEM="+folder+string(os.PathListSeparator)+file,
+		"MYGO_TEST_TRASH_RESIZE=1048576")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("TrashItem helper: %v\n%s", err, out)
+	}
+	results := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(results) != 2 {
+		t.Fatalf("TrashItem helper reported %q, want two results", out)
+	}
+	if !strings.Contains(results[0], "would be deleted permanently") {
+		t.Errorf("TrashItem(%s) reported %q, want a refusal", folder, results[0])
+	}
+	var size int64
+	if err := filepath.Walk(folder, func(_ string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			size += info.Size()
+		}
+		return err
+	}); err != nil || size != 4<<20 {
+		t.Errorf("TrashItem(%s) left %d bytes (%v), want %d", folder, size, err, 4<<20)
+	}
+	if !strings.Contains(results[1], "Windows deleted it permanently") {
+		t.Errorf("TrashItem(%s) reported %q, want an error saying Windows deleted it", file, results[1])
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Errorf("TrashItem(%s) kept the file (%v), so the shell did not delete it", file, err)
+	}
+}
+
+func TestTrashSinkNotesOnlyPermanentDeletes(t *testing.T) {
+	trashSinkOnce.Do(initTrashSink)
+	for _, tc := range []struct {
+		name     string
+		hr, item uintptr // hrDelete, and whether there is a new item
+		deleted  bool
+	}{
+		{"recycled", 0x00270008, 1, false},
+		{"deleted for good", 0x00270008, 0, true},
+		{"a folder too big, before its items", copyEngineSNotHandled, 0, false},
+		{"refused", eAbort, 0, false},
+	} {
+		sink := &trashSink{vtbl: &trashSinkVtbl, refs: 1}
+		p := uintptr(unsafe.Pointer(sink))
+		trashSinks[p] = sink
+		// PostDeleteItem(flags, item, hrDelete, newlyCreated), which only
+		// compares newlyCreated with nil.
+		syscall.SyscallN(trashSinkVtbl[12], p, 0, 0, tc.hr, tc.item)
+		delete(trashSinks, p)
+		if sink.deleted != tc.deleted {
+			t.Errorf("%s: deleted = %t, want %t", tc.name, sink.deleted, tc.deleted)
 		}
 	}
 }
