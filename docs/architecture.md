@@ -2779,7 +2779,8 @@ either.
   in AriaProperties, which UI Automation has for ARIA's properties
   without one of its own: Core-AAM maps nothing in UI Automation nor in
   AX API, and Chromium nothing in UI Automation; `Combobox`,
-  `Autocomplete` and a `TokenField` with suggestions set it to list.
+  `Autocomplete` and a `TokenField` with suggestions or a `Query` set it
+  to list.
   `RoleDescription` (`AccessNode.RoleDescription`,
   aria-roledescription) is AppKit's `accessibilityRoleDescription`,
   which elements override, ATK's `roledescription` attribute and UIA's
@@ -3890,7 +3891,14 @@ either.
   Label (`nameFrom`). Backends treat combo boxes as text fields (macOS
   `AXComboBox`, ATK combo box with AtkEditableText, UIA ComboBox with
   Value and ExpandCollapse); `AccessSearch` makes a text field AppKit's
-  `AXSearchField`.
+  `AXSearchField`. A token field's input edits a local of the field, not
+  a value of the app's: `Query`, called after the constructor took the
+  input, copies it to the app's string and keeps what it copied
+  (`tokenQuery.published`), so that a string the app changed since is
+  the app's, which the input takes as a text input takes a value the app
+  sets. While the build before called `Query` (`tokenQuery.bound`), the
+  app matches the suggestions, which the field shows as given rather than
+  `matching` the text; the pass that first binds it builds again.
 - **Disclosures** (`ui/collapsible.go`). A collapsible's trigger is a
   `RoleDisclosure`, expanded while open: AppKit's `AXDisclosureTriangle`,
   whose value is 1 while open; a toggle button that is expandable, and
