@@ -750,8 +750,16 @@ var httpStallTimeout = time.Minute
 // httpClient is the client of the updater's requests: the transport of
 // package netproxy, so that the system's proxy settings apply, with the
 // deadline for the headers that it leaves to its callers. A test that needs
-// another deadline replaces it for its run.
-var httpClient = sync.OnceValue(newHTTPClient)
+// another deadline changes the transport for its run.
+var updateHTTPClient struct {
+	once   sync.Once
+	client *http.Client
+}
+
+func httpClient() *http.Client {
+	updateHTTPClient.once.Do(func() { updateHTTPClient.client = newHTTPClient() })
+	return updateHTTPClient.client
+}
 
 func newHTTPClient() *http.Client {
 	transport := netproxy.Transport().Clone()
@@ -779,7 +787,10 @@ type stalledBody struct {
 func newStalledBody(body io.ReadCloser, cancel context.CancelFunc) *stalledBody {
 	b := &stalledBody{body: body, cancel: cancel, d: httpStallTimeout}
 	b.last.Store(time.Now().UnixNano())
-	b.timer = time.AfterFunc(b.d/4, b.check)
+	// Publish the timer before its callback can read it to rearm it.
+	b.timer = time.AfterFunc(1<<63-1, b.check)
+	b.timer.Stop()
+	b.timer.Reset(b.d / 4)
 	return b
 }
 

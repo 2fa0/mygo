@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/internal/update"
+	"github.com/egoist/mygo/internal/wait"
 )
 
 // updateServer serves a signed update whose app holds main with content,
@@ -519,12 +520,12 @@ func TestHTTPGetRetries(t *testing.T) {
 // A server that accepts the connection and never answers is given up on,
 // rather than holding a check open until the socket times out.
 func TestHTTPGetHeaderTimeout(t *testing.T) {
-	defer func(c func() *http.Client, r []time.Duration, d time.Duration) {
-		httpClient, httpRetries, httpHeaderTimeout = c, r, d
-	}(httpClient, httpRetries, httpHeaderTimeout)
+	transport := httpClient().Transport.(*http.Transport)
+	defer func(r []time.Duration, d time.Duration) {
+		httpRetries, transport.ResponseHeaderTimeout = r, d
+	}(httpRetries, transport.ResponseHeaderTimeout)
 	httpRetries = []time.Duration{time.Millisecond}
-	httpHeaderTimeout = 50 * time.Millisecond
-	httpClient = sync.OnceValue(newHTTPClient)
+	transport.ResponseHeaderTimeout = 50 * time.Millisecond
 
 	block := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -565,6 +566,21 @@ func TestHTTPGetStallGivesUp(t *testing.T) {
 	defer body.Close()
 	if _, err := io.ReadAll(body); err == nil || !strings.Contains(err.Error(), "stalled") {
 		t.Fatalf("reading a body that stopped ended with %v", err)
+	}
+}
+
+// Even an immediately firing callback sees a fully initialized body.
+func TestStalledBodyShortTimeout(t *testing.T) {
+	defer func(d time.Duration) { httpStallTimeout = d }(httpStallTimeout)
+	httpStallTimeout = time.Nanosecond
+	for range 100 {
+		ctx, cancel := context.WithCancel(t.Context())
+		body := newStalledBody(io.NopCloser(strings.NewReader("")), cancel)
+		wait.For(t, "the stalled body to cancel its request", ctx.Done())
+		body.Close()
+		if !body.stalled.Load() {
+			t.Fatal("the body did not report a stall")
+		}
 	}
 }
 
