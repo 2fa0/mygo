@@ -516,6 +516,86 @@ func TestHTTPGetRetries(t *testing.T) {
 	}
 }
 
+// A server that accepts the connection and never answers is given up on,
+// rather than holding a check open until the socket times out.
+func TestHTTPGetHeaderTimeout(t *testing.T) {
+	defer func(c func() *http.Client, r []time.Duration, d time.Duration) {
+		httpClient, httpRetries, httpHeaderTimeout = c, r, d
+	}(httpClient, httpRetries, httpHeaderTimeout)
+	httpRetries = []time.Duration{time.Millisecond}
+	httpHeaderTimeout = 50 * time.Millisecond
+	httpClient = sync.OnceValue(newHTTPClient)
+
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		<-block
+	}))
+	defer srv.Close()
+	defer close(block)
+
+	start := time.Now()
+	if _, err := httpGet(t.Context(), srv.URL+"/file"); err == nil {
+		t.Fatal("a server that never answers returned no error")
+	}
+	if waited := time.Since(start); waited > 5*time.Second {
+		t.Fatalf("waited %v for the headers of a response", waited)
+	}
+}
+
+// A body that stops arriving is given up on, rather than blocking the read
+// of a download until the socket times out.
+func TestHTTPGetStallGivesUp(t *testing.T) {
+	defer func(d time.Duration) { httpStallTimeout = d }(httpStallTimeout)
+	httpStallTimeout = 100 * time.Millisecond
+
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "100")
+		io.WriteString(w, "start")
+		w.(http.Flusher).Flush()
+		<-block
+	}))
+	defer srv.Close()
+	defer close(block)
+
+	body, err := httpGet(t.Context(), srv.URL+"/file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer body.Close()
+	if _, err := io.ReadAll(body); err == nil || !strings.Contains(err.Error(), "stalled") {
+		t.Fatalf("reading a body that stopped ended with %v", err)
+	}
+}
+
+// A body that keeps arriving is not given up, however slowly it sends.
+func TestHTTPGetKeepsASlowBody(t *testing.T) {
+	defer func(d time.Duration) { httpStallTimeout = d }(httpStallTimeout)
+	httpStallTimeout = 100 * time.Millisecond
+
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for i := 0; i < 10; i++ {
+			io.WriteString(w, "x")
+			w.(http.Flusher).Flush()
+			time.Sleep(20 * time.Millisecond)
+		}
+		<-block
+	}))
+	defer srv.Close()
+	defer close(block)
+
+	body, err := httpGet(t.Context(), srv.URL+"/file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer body.Close()
+	b, err := io.ReadAll(io.LimitReader(body, 10))
+	if err != nil || len(b) != 10 {
+		t.Fatalf("read %d bytes of a slow body: %v", len(b), err)
+	}
+}
+
 // TestWorkPattern checks that an app at the root of a drive or share, as
 // D:\, unpacks its update next to it (#1529).
 func TestWorkPattern(t *testing.T) {
