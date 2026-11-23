@@ -113,12 +113,13 @@ type Backend struct {
 	// MyGo is showing: TrackPopupMenuEx runs the menu loop that creates
 	// their windows, and their submenus', unlike the loops of a menu bar's
 	// dropdowns and of Windows' window menu, which are not MyGo's
-	// (menuProc).
+	// (menuProc). popupDPI is the DPI of the monitor the popup shows on
+	// while one does, 0 otherwise (trackPopup).
 	menuHook    uintptr
 	menuGlass   bool
 	menuWindows map[uintptr]*menuWindow
-	popupOwners map[uintptr]struct{}
 	popups      int
+	popupDPI    int
 	// comp shows the controls of windows with a material behind them
 	// (compositor.go). compRetry is when to try making it again after
 	// compFails failures in a row, and composeAt when timerCompose draws
@@ -322,10 +323,6 @@ func wndProc(hwnd, m, wp, lp uintptr) uintptr {
 	if b != nil && !b.exiting {
 		if hwnd == b.appHwnd {
 			if r, ok := b.appMessage(uint32(m), wp, lp); ok {
-				return r
-			}
-		} else if _, ok := b.popupOwners[hwnd]; ok {
-			if r, ok := b.menuItemMessage(hwnd, uint32(m), wp, lp); ok {
 				return r
 			}
 		} else if w := b.windows[hwnd]; w != nil {

@@ -146,24 +146,3 @@ func TestTrayMenuAt(t *testing.T) {
 		t.Error("rectangles that touch overlap")
 	}
 }
-
-func TestPopupOwnerLifecycle(t *testing.T) {
-	if err := registerClasses(); err != nil {
-		t.Fatal(err)
-	}
-	b := &Backend{}
-	hwnd := b.newPopupOwner(point{100, 100})
-	if hwnd == 0 {
-		t.Fatal("newPopupOwner returned 0")
-	}
-	if _, ok := b.popupOwners[hwnd]; !ok {
-		t.Fatal("newPopupOwner did not register hwnd in popupOwners")
-	}
-	b.dropPopupOwner(hwnd)
-	if _, ok := b.popupOwners[hwnd]; ok {
-		t.Fatal("dropPopupOwner did not remove hwnd from popupOwners")
-	}
-	if r, _, _ := procIsWindow.Call(hwnd); r != 0 {
-		t.Fatal("dropPopupOwner left window alive")
-	}
-}

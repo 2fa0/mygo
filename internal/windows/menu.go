@@ -562,12 +562,6 @@ func (b *Backend) PopupMenu(m *platform.Menu, pw platform.Window, pos *platform.
 // those it always gives, out of the rectangle exclude unless it is nil,
 // and returns the chosen command, or 0.
 func (b *Backend) trackPopup(menu, owner uintptr, pt point, flags uintptr, exclude *rect) uint16 {
-	if owner == b.appHwnd {
-		if temp := b.newPopupOwner(pt); temp != 0 {
-			owner = temp
-			defer b.dropPopupOwner(temp)
-		}
-	}
 	// The owner must be in the foreground, or the menu does not close
 	// when the user clicks elsewhere.
 	procSetForegroundWindow.Call(owner)
@@ -578,6 +572,13 @@ func (b *Backend) trackPopup(menu, owner uintptr, pt point, flags uintptr, exclu
 	// open on Alt (menuProc).
 	b.popups++
 	defer func() { b.popups-- }()
+	// Its items are measured and drawn at the DPI of the monitor it shows
+	// on, as buildMenu made their icons, not at the owner's: the hidden
+	// application window, which owns the menus of trays and those without
+	// a window, has the DPI of the monitor at 0,0 as the app started.
+	old := b.popupDPI
+	b.popupDPI = monitorDPI(monitorAt(int(pt.X), int(pt.Y)))
+	defer func() { b.popupDPI = old }()
 	var params *tpmParams
 	if exclude != nil {
 		params = &tpmParams{Exclude: *exclude}
@@ -586,27 +587,6 @@ func (b *Backend) trackPopup(menu, owner uintptr, pt point, flags uintptr, exclu
 	cmd, _, _ := procTrackPopupMenuEx.Call(menu, tpmReturnCmd|tpmRightButton|flags, uintptr(pt.X), uintptr(pt.Y), owner, uintptr(unsafe.Pointer(params)))
 	postMessage(owner, 0, 0, 0) // WM_NULL, as the documentation asks
 	return uint16(cmd)
-}
-
-// newPopupOwner creates a temporary hidden window at pt so a windowless
-// popup menu (such as a tray icon's) inherits the current DPI of pt's
-// monitor instead of b.appHwnd's startup DPI, which stays stale across
-// display changes and RDP dynamic resolution switches.
-func (b *Backend) newPopupOwner(pt point) uintptr {
-	hwnd := createWindow(wsExToolWindow, appClass, "", wsPopup, pt.X, pt.Y, 0, 0, 0)
-	if hwnd == 0 {
-		return 0
-	}
-	if b.popupOwners == nil {
-		b.popupOwners = map[uintptr]struct{}{}
-	}
-	b.popupOwners[hwnd] = struct{}{}
-	return hwnd
-}
-
-func (b *Backend) dropPopupOwner(hwnd uintptr) {
-	delete(b.popupOwners, hwnd)
-	procDestroyWindow.Call(hwnd)
 }
 
 // Keyboard accelerators.
